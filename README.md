@@ -206,6 +206,14 @@ Os resultados de tempo de execução e utilização de recursos irão variar con
 
 Adicionalmente, os resultados analisados no artigo estão disponíveis na pasta `./samples/article`.
 
+Além dos gráficos preliminares gerados pelo script de demonstração, este repositório inclui um notebook Jupyter (`docs/plots_sf_sbrc25.ipynb`) que contém análises mais detalhadas dos dados e estatísticas dos experimentos. Este notebook permite uma análise mais profunda dos resultados, incluindo visualizações personalizadas e cálculos estatísticos adicionais.
+
+Para executar o notebook, você precisará ter o Jupyter instalado e as dependências Python necessárias. O notebook está localizado no diretório `docs/` e pode ser aberto com:
+
+```bash
+jupyter notebook docs/plots_sf_sbrc25.ipynb
+```
+
 Acesse os repositórios de cada componente para mais detalhes sobre a implementação e a documentação de cada um, além de verificar a `Dockerfile` de cada projeto para mais detalhes sobre a configuração e a execução dos serviços.
 
 Convido você a conhecer o projeto [MalwareDataLab](https://mdl.unihacker.club/).
