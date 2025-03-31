@@ -33,15 +33,17 @@ A seguir, são listadas as dependências necessárias para a execução dos serv
 
 ## Hardware
 
-- Sistema operacional Linux (por exemplo, Ubuntu, Debian e outros...)
+- Sistema operacional Linux (por exemplo, Ubuntu 20.04+, Debian 11+)
 - Virtualização habilitada na BIOS
-- Mínimo de 4GB de RAM
-- Mínimo de 10GB de espaço livre em disco, dependendo dos "processadores" disponíveis (para arquivos, resultados de processamento, banco de dados e imagens Docker)
+- CPU: Mínimo 2 cores (Recomendado: 4+ cores)
+- RAM: Mínimo 4GB (Recomendado: 8GB+)
+- Armazenamento: Mínimo 10GB livre (Recomendado: 20GB+ dependendo do volume de dados)
 
 ## Software
 
 - [Git](https://git-scm.com/downloads) instalado
 - [Docker](https://docs.docker.com/get-docker/) instalado
+- [Node.js](https://nodejs.org/en/download/) instalado (recomendado utilizar fnm ou nvm para instalar)
 
 ## Serviços
 
@@ -53,13 +55,25 @@ As instruções para a criação e configuração do projeto Firebase estão dis
 
 # Preocupações com segurança
 
-- Portas: por padrão a porta 3333 é disponibilizada para a API, e a porta 3000 para o watcher, estas portas estarão expostas na máquina local, podem ser acessadas externamente dependendo das configurações de sua máquina, firewall, rede, etc. Você pode alterar essas portas nas variáveis ambiente no arquivo `docker-compose.yml` ou `.env` no valor de `APP_PORT` na API e utilizando o parâmetro `-p` no watcher.
+- Portas: por padrão a porta 3333 é disponibilizada para a API, e a porta 3000 para o watcher. Estas portas estarão expostas na máquina local e podem ser acessadas externamente dependendo das configurações de sua máquina, firewall, rede, etc. Você pode alterar essas portas nas variáveis ambiente no arquivo `docker-compose.yml` ou `.env` no valor de `APP_PORT` na API e utilizando o parâmetro `-p` no watcher.
 
-- Firebase: as credenciais do projeto Firebase são armazenadas no arquivo `docker-compose.yml` ou `.env` da API. Remova os valores após o uso e certifique-se de encerrar o projeto ou desativar as configurações de cobrança do mesmo.
+- Firebase: 
+  - As credenciais do projeto Firebase são armazenadas no arquivo `docker-compose.yml` ou `.env` da API
+  - Remova os valores após o uso
+  - Certifique-se de encerrar o projeto ou desativar as configurações de cobrança
+  - Use variáveis de ambiente em produção ao invés de hardcoding
 
-- Script: caso esteja utilizando o script de demonstração com o parâmetro `-p` (senha da sua conta no projeto Firebase), certifique-se de limpar o histórico de comandos do terminal utilizando o comando `history -c` ou similar de acordo com o seu sistema operacional.
+- Dados:
+  - Considere a privacidade e segurança dos dados processados
+  - Implemente políticas de retenção de dados quando necessário
+  - Utilize conexões seguras (HTTPS/SSL) em ambientes de produção
 
-- Desativação: certifique-se de encerrar todas as instâncias do backend e workers após o uso.
+- Script: caso esteja utilizando o script de demonstração com o parâmetro `-p` (senha da sua conta no projeto Firebase), certifique-se de limpar o histórico de comandos do terminal utilizando o comando `history -c` ou similar.
+
+- Desativação: 
+  - Encerre todas as instâncias do backend e workers após o uso
+  - Verifique se todos os containers Docker foram removidos
+  - Limpe dados sensíveis dos volumes Docker quando aplicável
 
 # Instalação
 
@@ -133,26 +147,79 @@ Guarde esta chave para ser utilizada como parâmetro `-k` no script de demonstra
 
 Uma vez que todas as dependências e configurações necessárias estão realizadas, você pode executar o script de demonstração `run.sh` para testar o sistema.
 
-## Script de Demonstração (run.sh)
+## Uso
 
-O script `run.sh` é uma ferramenta para executar demonstrações do sistema. Ele aceita os seguintes parâmetros:
+O script principal `run.sh` fornece um fluxo completo para executar o sistema. Ele suporta tanto workers locais quanto remotos.
 
-- `-k, --firebasekey FIREBASEKEY`: Chave da API do Firebase (obrigatório)
-- `-u, --username USERNAME`: Nome de usuário do Firebase (email) (obrigatório)
-- `-p, --password PASSWORD`: Senha do Firebase (obrigatório)
-- `-n, --num-workers NUM_WORKERS`: Número de containers worker (padrão: 1)
-- `-r, --num-requests NUM_REQUESTS`: Número de requisições de processamento (padrão: 1)
-- `-h, --help`: Mostra a mensagem de ajuda
+### Uso Básico
 
-Exemplo de uso mínimo:
 ```bash
-./run.sh -k "sua-chave-de-api-do-firebase" -u "seu-email@exemplo.com" -p "sua-senha" -n 1 -r 1
+./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA
 ```
 
-Este comando irá:
-1. Iniciar 1 container worker
-2. Processar 1 requisição
-3. Utilizar as credenciais do Firebase fornecidas
+### Uso Avançado
+
+```bash
+./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n NUM_WORKERS_LOCAIS -e TOTAL_WORKERS_ESPERADOS -w NUM_WATCHERS_ESPERADOS
+```
+
+#### Parâmetros
+
+- `-k, --firebasekey`: Sua chave da API do Firebase (obrigatório)
+- `-u, --username`: Seu email do Firebase (obrigatório)
+- `-p, --password`: Sua senha do Firebase (obrigatório)
+- `-n, --num-workers`: Número de containers worker a serem iniciados localmente (padrão: 1)
+- `-e, --expected-workers`: Total de workers esperados (locais + remotos) (padrão: 1)
+- `-w, --expected-watchers`: Número de watchers esperados (conexões do cliente de telemetria) (padrão: 1)
+- `-h, --help`: Mostra a mensagem de ajuda
+
+#### Cenários de Exemplo
+
+1. **Configuração apenas local** (1 worker):
+```bash
+./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA
+```
+
+2. **Configuração apenas local** (múltiplos workers):
+```bash
+./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 3 -e 3
+```
+
+3. **Configuração híbrida** (2 workers locais, 3 workers remotos esperados):
+```bash
+./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 2 -e 5
+```
+
+4. **Configuração apenas remota** (sem workers locais, 3 workers remotos esperados):
+```bash
+./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 0 -e 3 -w 1
+```
+
+5. **Configuração com múltiplos watchers** (2 workers locais, 3 workers remotos esperados, 2 watchers):
+```bash
+./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 2 -e 5 -w 2
+```
+
+### Configuração de Workers Remotos
+
+Ao usar workers remotos, o script exibirá instruções para configurar cada worker remoto. Você precisará:
+
+1. Instalar o watcher client em cada máquina remota
+2. Iniciar o container worker em cada máquina remota
+3. Pressionar Enter no script principal para continuar após todos os workers estarem prontos
+
+O script aguardará até que todos os workers esperados (locais + remotos) estejam disponíveis antes de prosseguir com o processamento do dataset.
+
+### Telemetria
+
+Durante a execução, o script gera um token de telemetria único para rastrear as métricas do experimento. Este token é gerado automaticamente e pode ser encontrado nos logs de execução. As métricas coletadas incluem:
+
+- Uso de CPU por worker
+- Tempo de processamento
+- Distribuição de tarefas
+- Status das requisições
+
+Os dados de telemetria são armazenados localmente e podem ser analisados posteriormente na pasta `experiments`. Os dados estão organizados por data de execução e a iteração do experimento. Cada arquivo .csv representa um worker. O arquivo `statistics.csv` dentro da pasta de iteração contém as métricas agregadas de todos os workers, da iteração. A pasta `globalStatistics` contém as métricas agregadas de todos os workers de todas as iterações. Caso deseje desconsiderar um conjunto de iterações, você pode apenas excluir a pasta correspondente antes de executar o script de demonstração.
 
 # Experimentos
 

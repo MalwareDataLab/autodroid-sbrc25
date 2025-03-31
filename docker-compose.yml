@@ -1,6 +1,6 @@
 services:
-  autodroid_api_postgres_prod:
-    container_name: autodroid_api_postgres_prod
+  autodroid_postgres:
+    container_name: autodroid_postgres
     image: postgres:14
     environment:
       - POSTGRES_PASSWORD=docker
@@ -10,28 +10,28 @@ services:
       - ./.runtime/database/postgres:/var/lib/postgresql/data
     restart: always
     networks:
-      - autodroid_api_network_prod
+      - autodroid_network
 
-  autodroid_api_redis_prod:
-    container_name: autodroid_api_redis_prod
+  autodroid_redis:
+    container_name: autodroid_redis
     image: redis:alpine
     volumes:
       - ./.runtime/database/redis:/data
     restart: always
     networks:
-      - autodroid_api_network_prod
+      - autodroid_network
 
-  autodroid_api_mongo_prod:
-    container_name: autodroid_api_mongo_prod
+  autodroid_mongo:
+    container_name: autodroid_mongo
     image: mongo:6
     volumes:
       - ./.runtime/database/mongo:/data/db
     restart: always
     networks:
-      - autodroid_api_network_prod
+      - autodroid_network
 
-  autodroid_api_gateway_prod:
-    container_name: autodroid_api_gateway_prod
+  autodroid_api:
+    container_name: autodroid_api
     image: malwaredatalab/autodroid-api:latest
     build:
       context: .
@@ -49,15 +49,15 @@ services:
       - CORS_ALLOWED_FROM=http://localhost:3000,*
 
       # Database
-      - DATABASE_URL=postgresql://postgres:docker@autodroid_api_postgres_prod:5432/autodroid?schema=public
+      - DATABASE_URL=postgresql://postgres:docker@autodroid_postgres:5432/autodroid?schema=public
       - DATABASE_LOGGER_ENABLED=false
 
       # Non-relational database
-      - NON_RELATIONAL_DATABASE_URL=mongodb://autodroid_api_mongo_prod:27017/autodroid
+      - NON_RELATIONAL_DATABASE_URL=mongodb://autodroid_mongo:27017/autodroid
       - NON_RELATIONAL_DATABASE_LOGGER_ENABLED=false
 
       # Redis
-      - REDIS_HOST=autodroid_api_redis_prod
+      - REDIS_HOST=autodroid_redis
       - REDIS_PORT=6379
       - REDIS_USER=
       - REDIS_PASS=
@@ -101,27 +101,28 @@ services:
       - PROCESSING_ALLOWED_KEEP_UNTIL_EXTEND=30d
     ports:
       - 3333:3333
-    command: ./wait-for.sh autodroid_api_postgres_prod:5432 -q -- ./wait-for.sh autodroid_api_mongo_prod:27017 -q -- ./wait-for.sh autodroid_api_redis_prod:6379 -q -- sh -c "yarn run-s prisma:generate prisma:prod start:prod"
+    command: ./wait-for.sh autodroid_postgres:5432 -q -- ./wait-for.sh autodroid_mongo:27017 -q -- ./wait-for.sh autodroid_redis:6379 -q -- sh -c "yarn run-s prisma:generate prisma:prod start:prod"
     depends_on:
-      - autodroid_api_postgres_prod
-      - autodroid_api_mongo_prod
-      - autodroid_api_redis_prod
+      - autodroid_postgres
+      - autodroid_mongo
+      - autodroid_redis
     healthcheck:
-      test: wget --spider -q http://autodroid_api_gateway_prod:3333/health/readiness || exit 1
+      test: wget --spider -q http://autodroid_api:3333/health/readiness || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
     restart: always
     networks:
-      - autodroid_api_network_prod
+      - autodroid_network
 
   watchtower:
     image: containrrr/watchtower
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
-    command: --interval 30 autodroid_api_gateway_prod
+    command: --interval 30 autodroid_api
 
 networks:
-  autodroid_api_network_prod:
+  autodroid_network:
+    name: autodroid_network

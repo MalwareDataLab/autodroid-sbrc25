@@ -1,29 +1,122 @@
 #!/bin/sh
 
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+
+TELEMETRY_PORT=3334
+
+# Update here in case of any change on the docker-compose.yml file
 HOST=http://localhost
 PORT=3333
+VOLUME_NAME="autodroid_worker_data"
+DOCKER_NETWORK_NAME="autodroid_network"
+DOCKER_API_SERVICE_NAME="autodroid_api"
+#
 
 API_IMAGE_NAME="malwaredatalab/autodroid-api"
 WORKER_IMAGE_NAME="malwaredatalab/autodroid-worker"
+TOOL_IMAGE_NAME="malwaredatalab/malsyngen"
 CONTAINER_NAME_PREFIX="autodroid_worker"
-VOLUME_NAME="autodroid_worker_data"
+WATCHER_SERVER_IMAGE_NAME="malwaredatalab/autodroid-watcher-server"
+WATCHER_SERVER_CONTAINER_NAME="autodroid_watcher_server"
+WATCHER_CLIENT_IMAGE_NAME="malwaredatalab/autodroid-watcher-client"
+WATCHER_CLIENT_INSTANCE_NAME="autodroid_watcher_local_client"
+WATCHER_CLIENT_PM2_SERVICE_NAME="autodroid-watcher"
 DEFAULT_NUM_WORKERS=1
-DEFAULT_NUM_PROCESSING_REQUESTS=1
+DEFAULT_EXPECTED_WORKERS=1
 
 DATASET_FILE_PATH="./docs/samples/dataset_example.csv"
 
 clear
 
 show_help() {
-  echo "Usage: $0 [-k FIREBASEKEY] [-u USERNAME] [-p PASSWORD] [-n NUM_WORKERS] [-r NUM_PROCESSING_REQUESTS]"
+  echo "Usage: $0 [-k FIREBASEKEY] [-u USERNAME] [-p PASSWORD] [-n NUM_WORKERS] [-e EXPECTED_WORKERS] [-w EXPECTED_WATCHERS]"
   echo
   echo "Options:"
   echo "  -k, --firebasekey FIREBASEKEY   Firebase API key"
   echo "  -u, --username USERNAME         Firebase username (email)"
   echo "  -p, --password PASSWORD         Firebase password"
-  echo "  -n, --num-workers NUM_WORKERS   Number of worker containers (default: 1)"
-  echo "  -r, --num-requests NUM_REQUESTS Number of processing requests (default: 1)"
+  echo "  -n, --num-workers NUM_WORKERS   Number of worker containers to start locally (default: 1)"
+  echo "  -e, --expected-workers NUM      Total number of workers expected (local + remote) (default: 1)"
+  echo "  -w, --expected-watchers NUM     Number of watchers expected (default: 1)"
   echo "  -h, --help                      Show this help message"
+}
+
+dropVolumeData() {
+  if [ -d "./.runtime" ]; then
+    echo "[INFO] Removing ./.runtime directory..." >&2
+    docker run --rm -v "$(pwd)":/workdir busybox rm -rf /workdir/.runtime
+  fi
+
+  if [ -d "./autodroid-watcher-client" ]; then
+    echo "[INFO] Removing ./autodroid-watcher-client directory..." >&2
+    rm -rf ./autodroid-watcher-client
+  fi
+}
+
+cleanup() {
+  echo "[INFO] Starting cleanup process..."
+  docker-compose down -v
+
+  if [ "$(docker ps -q -f name="$WATCHER_SERVER_CONTAINER_NAME")" ]; then
+    echo "[INFO] Stopping watcher server..." >&2
+    if ! docker stop "$WATCHER_SERVER_CONTAINER_NAME" >/dev/null 2>&1; then
+      echo "[WARNING] Failed to stop watcher server container" >&2
+    fi
+  fi
+
+  if [ "$(docker ps -aq -f name="$WATCHER_SERVER_CONTAINER_NAME")" ]; then
+    echo "[INFO] Removing watcher server container..." >&2
+    if ! docker rm -f "$WATCHER_SERVER_CONTAINER_NAME" >/dev/null 2>&1; then
+      echo "[WARNING] Failed to remove watcher server container" >&2
+    fi
+  fi
+
+  # Stop and remove worker containers
+  docker ps -aq -f name="$CONTAINER_NAME_PREFIX" | while read -r container_id; do
+    echo "[INFO] Removing container $container_id..." >&2
+    if ! docker rm -f "$container_id" >/dev/null 2>&1; then
+      echo "[WARNING] Failed to remove container $container_id" >&2
+    fi
+  done
+
+  PM2_SERVICE_EXISTS=$(pm2 jlist 2>/dev/null | jq -e ".[] | select(.name == \"$WATCHER_CLIENT_PM2_SERVICE_NAME\")" 2>/dev/null)
+  PM2_EXIT_STATUS=$?
+  
+  if [ "$PM2_EXIT_STATUS" -eq 0 ]; then
+    echo "[INFO] Found watcher client service, stopping it..." >&2
+    if ! pm2 stop "$WATCHER_CLIENT_PM2_SERVICE_NAME" >/dev/null 2>&1; then
+      echo "[WARNING] Failed to stop watcher client service" >&2
+    fi
+    if ! pm2 delete "$WATCHER_CLIENT_PM2_SERVICE_NAME" >/dev/null 2>&1; then
+      echo "[WARNING] Failed to delete watcher client service" >&2
+    fi
+  fi
+
+  if [ "$(docker volume ls -q -f name="$VOLUME_NAME")" ]; then
+    echo "[INFO] Removing existing $VOLUME_NAME volume..." >&2
+    if ! docker volume rm "$VOLUME_NAME" >/dev/null 2>&1; then
+      echo "[WARNING] Failed to remove volume $VOLUME_NAME" >&2
+    fi
+  fi
+
+  dropVolumeData
+}
+
+stop() {
+  echo "[INFO] Stopping the demo..." >&2
+  cleanup
+
+  if [ $# -gt 0 ]; then
+    greeting "$@"
+  fi
+  exit 0
+}
+
+exit_on_error() {
+  echo "[ERROR] $1" >&2
+  cleanup
+  wait
+  exit 1
 }
 
 greeting() {
@@ -73,8 +166,12 @@ while [ $# -gt 0 ]; do
       NUM_WORKERS="$2"
       shift 2
       ;;
-    -r|--num-requests)
-      NUM_PROCESSING_REQUESTS="$2"
+    -e|--expected-workers)
+      EXPECTED_WORKERS="$2"
+      shift 2
+      ;;
+    -w|--expected-watchers)
+      EXPECTED_WATCHERS="$2"
       shift 2
       ;;
     -h|--help)
@@ -93,57 +190,29 @@ if [ -z "$NUM_WORKERS" ]; then
   NUM_WORKERS=$DEFAULT_NUM_WORKERS
 fi
 
-if [ -z "$NUM_PROCESSING_REQUESTS" ]; then
-  NUM_PROCESSING_REQUESTS=$DEFAULT_NUM_PROCESSING_REQUESTS
+if [ -z "$EXPECTED_WORKERS" ]; then
+  EXPECTED_WORKERS=$DEFAULT_EXPECTED_WORKERS
+fi
+
+if [ -z "$EXPECTED_WATCHERS" ]; then
+  EXPECTED_WATCHERS=1
 fi
 
 if ! echo "$NUM_WORKERS" | grep -qE '^[0-9]+$' || [ "$NUM_WORKERS" -lt 0 ]; then
   exit_on_error "Number of workers must be a non-negative integer"
 fi
 
-if ! echo "$NUM_PROCESSING_REQUESTS" | grep -qE '^[0-9]+$' || [ "$NUM_PROCESSING_REQUESTS" -lt 1 ]; then
-  exit_on_error "Number of processing requests must be a positive integer"
+if ! echo "$EXPECTED_WORKERS" | grep -qE '^[0-9]+$' || [ "$EXPECTED_WORKERS" -lt 1 ]; then
+  exit_on_error "Expected number of workers must be a positive integer"
 fi
 
-dropVolumeData() {
-  if [ -d "./.runtime" ]; then
-    echo "[INFO] Removing ./.runtime directory..." >&2
-    docker run --rm -v "$(pwd)":/workdir busybox rm -rf /workdir/.runtime
-  fi
-}
+if ! echo "$EXPECTED_WATCHERS" | grep -qE '^[0-9]+$' || [ "$EXPECTED_WATCHERS" -lt 1 ]; then
+  exit_on_error "Expected number of watchers must be a positive integer"
+fi
 
-cleanup() {
-  docker-compose down -v
-
-  docker ps -aq -f name="$CONTAINER_NAME_PREFIX" | while read -r container_id; do
-    echo "[INFO] Removing container $container_id..." >&2
-    docker rm -f "$container_id"
-  done
-
-  if [ "$(docker volume ls -q -f name=$VOLUME_NAME)" ]; then
-    echo "[INFO] Removing existing $VOLUME_NAME volume..." >&2
-    docker volume rm $VOLUME_NAME
-  fi
-
-  dropVolumeData
-}
-
-stop() {
-  echo "[INFO] Stopping the demo..." >&2
-  cleanup
-
-  if [ $# -gt 0 ]; then
-    greeting "$@"
-  fi
-  exit 0
-}
-
-exit_on_error() {
-  echo "[ERROR] $1" >&2
-  cleanup
-  wait
-  exit 1
-}
+if [ "$EXPECTED_WORKERS" -lt "$NUM_WORKERS" ]; then
+  exit_on_error "Expected number of workers cannot be less than the number of local workers"
+fi
 
 firebase_login() {
   FIREBASE_LOGIN_RESPONSE=$(curl -s -X POST "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=$FIREBASEKEY" \
@@ -207,8 +276,8 @@ exchange_refresh_to_id_token() {
 }
 
 is_token_expiring_soon() {
-  local CURRENT_TIME=$(date +%s)
-  local TIME_LEFT=$((ID_TOKEN_EXP - CURRENT_TIME))
+  CURRENT_TIME=`date +%s`
+  TIME_LEFT=`expr $ID_TOKEN_EXP - $CURRENT_TIME`
 
   if [ $TIME_LEFT -lt 300 ]; then
     return 0
@@ -233,6 +302,23 @@ if ! docker info >/dev/null 2>&1; then
   exit_on_error "Current user cannot run Docker commands."
 fi
 
+if ! command -v node >/dev/null 2>&1; then
+  exit_on_error "Node is not installed. Please install Node (https://nodejs.org/en/download/), use fnm or nvm to install it (recommended)."
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[INFO] jq is not installed. Installing..."
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update && sudo apt-get install -y jq
+  elif command -v yum >/dev/null 2>&1; then
+    sudo yum install -y jq
+  elif command -v apk >/dev/null 2>&1; then
+    sudo apk add --no-cache jq
+  else
+    exit_on_error "Could not install jq. Please install it manually."
+  fi
+fi
+
 DOCKER_VERSION=$(docker version -f "{{.Server.Version}}")
 DOCKER_VERSION_MAJOR=$(echo "$DOCKER_VERSION"| cut -d'.' -f 1)
 DOCKER_VERSION_MINOR=$(echo "$DOCKER_VERSION"| cut -d'.' -f 2)
@@ -247,8 +333,8 @@ if [ ! -f "./docker-compose.yml" ]; then
   exit_on_error "docker-compose.yml not found in the current directory."
 fi
 
-if ! grep -q '^ *autodroid_api_gateway_prod:' docker-compose.yml; then
-  exit_on_error "autodroid_api_gateway_prod service not found in docker-compose.yml."
+if ! grep -q "^ *${DOCKER_API_SERVICE_NAME}:" docker-compose.yml; then
+  exit_on_error "$DOCKER_API_SERVICE_NAME service not found in docker-compose.yml."
 fi
 
 REQUIRED_ENV_VARS="
@@ -267,7 +353,7 @@ get_env_var() {
   VALUE=$(docker-compose config | awk -v var="$VAR_NAME" '$1 == var":"{gsub(/"/, "", $2); print $2}')
 
   if [ -z "$VALUE" ] || [ "$VALUE" = "null" ] || [ "$VALUE" = "" ]; then
-    exit_on_error "$VAR_NAME is missing or empty in autodroid_api_gateway_prod environment variables."
+    exit_on_error "$VAR_NAME is missing or empty in $DOCKER_API_SERVICE_NAME environment variables."
   fi
 
   echo "$VALUE"
@@ -350,6 +436,13 @@ while [ -z "$PASSWORD" ] || [ ${#PASSWORD} -le 1 ] || [ -z "$ID_TOKEN"]; do
   fi
 done
 
+echo "[INFO] Pulling tool image $TOOL_IMAGE_NAME:latest..."
+docker pull "$TOOL_IMAGE_NAME:latest"
+echo "[INFO] Tool image pulled successfully."
+
+TELEMETRY_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -d '\n')
+echo "[INFO] Generated telemetry token: $TELEMETRY_TOKEN"
+
 trap 'stop' 0
 trap 'stop' INT
 
@@ -367,8 +460,6 @@ until [ "$(curl -s -o /dev/null -w ''%{http_code}'' $HOST:$PORT/health/readiness
   sleep 5
 done
 echo "[INFO] Backend is ready."
-
-echo "[INFO] Worker container started."
 
 call_backend() {
   local CALL_BACKEND_METHOD="$1"
@@ -403,8 +494,8 @@ check_workers_available() {
     return 1
   fi
   
-  if [ "$WORKERS_WITH_LAST_SEEN" -lt "$NUM_WORKERS" ]; then
-    echo "[INFO] Waiting for workers to be active... (Active workers: $WORKERS_WITH_LAST_SEEN/$NUM_WORKERS)"
+  if [ "$WORKERS_WITH_LAST_SEEN" -lt "$EXPECTED_WORKERS" ]; then
+    echo "[INFO] Waiting for workers to be active... (Active workers: $WORKERS_WITH_LAST_SEEN/$EXPECTED_WORKERS)"
     return 1
   fi
 
@@ -417,99 +508,99 @@ check_workers_available() {
 #
 step "Step 1" "Create a processor - getting the processor_id to request processing."
 PROCESSOR_CREATE_RESPONSE=$(call_backend "POST" "/admin/processor" "{
-            \"name\": \"DroidAugmentor\",
+            \"name\": \"MalSynGen\",
             \"version\": \"0.0.1\",
-            \"image_tag\": \"malwaredatalab/droidaugmentor:latest\",
+            \"image_tag\": \"$TOOL_IMAGE_NAME:latest\",
             \"description\": \"Expande datasets de malware\",
-            \"tags\": \"one,two,three\",
+            \"tags\": \"MalSynGen,Latest\",
             \"allowed_mime_types\": \"text/csv\",
-            \"visibility\": \"HIDDEN\",
+            \"visibility\": \"PUBLIC\",
             \"configuration\": {
+                \"output_result_file_glob_patterns\": [\"datasets/*\"],
+                \"output_metrics_file_glob_patterns\": [\"metrics/**/*\"],
+                \"dataset_input_argument\": \"input_dataset\",
+                \"dataset_input_value\": \"/MalSynGen/shared/inputs\",
+                \"dataset_output_argument\": \"output_dir\",
+                \"dataset_output_value\": \"/MalSynGen/shared/outputs\",
+                \"command\": \"/MalSynGen/shared/app_run.sh\",
                 \"parameters\": [
                     {
-                      \"sequence\": 1, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"data_type\", \"description\": \"data_type\"
+                        \"sequence\": 1, \"type\": \"STRING\", \"is_required\": false, \"default_value\": \"RandomForest,SupportVectorMachine,DecisionTree,AdaBoost,Perceptron,SGDRegressor,XGboost\",
+                        \"name\": \"classifier\", \"description\": \"Classificador (ou lista de classificadores separada por ,)\"
                     },
                     {
-                      \"sequence\": 2, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"num_samples_class_malware\", \"description\": \"num_samples_class_malware\"
+                        \"sequence\": 2, \"type\": \"STRING\", \"is_required\": false, \"default_value\": \"float32\",
+                        \"name\": \"data_type\", \"description\": \"Tipo de dado para representar as características das amostras.\"
                     },
                     {
-                      \"sequence\": 3, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"num_samples_class_benign\", \"description\": \"num_samples_class_benign\"
+                        \"sequence\": 3, \"type\": \"INTEGER\", \"is_required\": true, \"default_value\": \"2000\",
+                        \"name\": \"num_samples_class_malware\", \"description\": \"Número de amostras da Classe 1 (maligno).\"
                     },
                     {
-                      \"sequence\": 4, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"number_epochs\", \"description\": \"number_epochs\"
+                        \"sequence\": 4, \"type\": \"INTEGER\", \"is_required\": true, \"default_value\": \"2000\",
+                        \"name\": \"num_samples_class_benign\", \"description\": \"Número de amostras da Classe 0 (benigno).\"
                     },
                     {
-                      \"sequence\": 5, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"k_fold\", \"description\": \"k_fold\"
+                        \"sequence\": 5, \"type\": \"INTEGER\", \"is_required\": false, \"default_value\": \"100\",
+                        \"name\": \"number_epochs\", \"description\": \"Número de épocas (iterações de treinamento).\"
                     },
                     {
-                      \"sequence\": 6, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"initializer_mean\", \"description\": \"initializer_mean\"
+                        \"sequence\": 6, \"type\": \"INTEGER\", \"is_required\": false, \"default_value\": \"5\",
+                        \"name\": \"k_fold\", \"description\": \"Número de folds para validação cruzada.\"
                     },
                     {
-                      \"sequence\": 7, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"initializer_deviation\", \"description\": \"initializer_deviation\"
+                        \"sequence\": 7, \"type\": \"STRING\", \"is_required\": false, \"default_value\": \"0.0\",
+                        \"name\": \"initializer_mean\", \"description\": \"Valor central da distribuição gaussiana do inicializador.\"
                     },
                     {
-                      \"sequence\": 8, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"latent_dimension\", \"description\": \"latent_dimension\"
+                        \"sequence\": 8, \"type\": \"STRING\", \"is_required\": false, \"default_value\": \"0.5\",
+                        \"name\": \"initializer_deviation\", \"description\": \"Desvio padrão da distribuição gaussiana do inicializador.\"
                     },
                     {
-                      \"sequence\": 9, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"training_algorithm\", \"description\": \"training_algorithm\"
+                        \"sequence\": 9, \"type\": \"INTEGER\", \"is_required\": false, \"default_value\": \"128\",
+                        \"name\": \"latent_dimension\", \"description\": \"Dimensão do espaço latente para treinamento cGAN.\"
                     },
                     {
-                      \"sequence\": 10, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"activation_function\", \"description\": \"activation_function\"
+                        \"sequence\": 10, \"type\": \"STRING\", \"is_required\": false, \"default_value\": \"Adam\",
+                        \"name\": \"training_algorithm\", \"description\": \"Algoritmo de treinamento para cGAN ('Adam', 'RMSprop', 'Adadelta').\"
                     },
                     {
-                      \"sequence\": 11, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"dropout_decay_rate_g\", \"description\": \"dropout_decay_rate_g\"
+                        \"sequence\": 11, \"type\": \"STRING\", \"is_required\": false, \"default_value\": \"LeakyReLU\",
+                        \"name\": \"activation_function\", \"description\": \"Função de ativação da cGAN ('LeakyReLU', 'ReLU', 'PReLU').\"
                     },
                     {
-                      \"sequence\": 12, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"dropout_decay_rate_d\", \"description\": \"dropout_decay_rate_d\"
+                        \"sequence\": 12, \"type\": \"STRING\", \"is_required\": false, \"default_value\": \"0.2\",
+                        \"name\": \"dropout_decay_rate_g\", \"description\": \"Taxa de decaimento do dropout do gerador da cGAN.\"
                     },
                     {
-                      \"sequence\": 13, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"dense_layer_sizes_g\", \"description\": \"dense_layer_sizes_g\"
+                        \"sequence\": 13, \"type\": \"STRING\", \"is_required\": false, \"default_value\": \"0.4\",
+                        \"name\": \"dropout_decay_rate_d\", \"description\": \"Taxa de decaimento do dropout do discriminador da cGAN.\"
                     },
                     {
-                      \"sequence\": 14, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"dense_layer_sizes_d\", \"description\": \"dense_layer_sizes_d\"
+                        \"sequence\": 14, \"type\": \"STRING\", \"is_required\": false, \"default_value\": \"512\",
+                        \"name\": \"dense_layer_sizes_g\", \"description\": \"Valor das camadas densas do gerador (um ou mais valores separados por ,).\"
                     },
                     {
-                      \"sequence\": 15, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"batch_size\", \"description\": \"batch_size\"
+                        \"sequence\": 15, \"type\": \"STRING\", \"is_required\": false, \"default_value\": \"512\",
+                        \"name\": \"dense_layer_sizes_d\", \"description\": \"Valor das camadas densas do discriminador (um ou mais valores separados por ,).\"
                     },
                     {
-                      \"sequence\": 16, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"verbosity\", \"description\": \"verbosity\"
+                        \"sequence\": 16, \"type\": \"INTEGER\", \"is_required\": false, \"default_value\": \"32\",
+                        \"name\": \"batch_size\", \"description\": \"Tamanho do lote da cGAN.\"
                     },
                     {
-                      \"sequence\": 17, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"save_models\", \"description\": \"save_models\"
+                        \"sequence\": 17, \"type\": \"INTEGER\", \"is_required\": false, \"default_value\": \"20\",
+                        \"name\": \"verbosity\", \"description\": \"Nível de verbosidade.\"
                     },
                     {
-                      \"sequence\": 18, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"path_confusion_matrix\", \"description\": \"path_confusion_matrix\"
+                        \"sequence\": 18, \"type\": \"STRING\", \"is_required\": false, \"default_value\": \"0.0\",
+                        \"name\": \"latent_mean_distribution\", \"description\": \"Média da distribuição do ruído aleatório de entrada.\"
                     },
                     {
-                      \"sequence\": 19, \"type\": \"STRING\", \"is_required\": false, \"default_value\": null,
-                      \"name\": \"path_curve_loss\", \"description\": \"path_curve_loss\"
+                        \"sequence\": 19, \"type\": \"STRING\", \"is_required\": false, \"default_value\": \"1.0\",
+                        \"name\": \"latent_stander_deviation\", \"description\": \"Desvio padrão do ruído aleatório de entrada.\"
                     }
-                ],
-                \"dataset_input_argument\": \"input_dataset\",
-                \"dataset_input_value\": \"/droidaugmentor/shared/inputs\",
-                \"dataset_output_argument\": \"output_dir\",
-                \"dataset_output_value\": \"/droidaugmentor/shared/outputs\",
-                \"command\": \"/droidaugmentor/shared/app_run.sh\",
-                \"output_result_file_glob_patterns\": [\"*\"],
-                \"output_metrics_file_glob_patterns\": [\"*\"]
+                ]
             }
         }")
 PROCESSOR_ID=$(echo "$PROCESSOR_CREATE_RESPONSE" | jq -r .id)
@@ -531,21 +622,40 @@ if [ -z "$WORKER_REGISTRATION_TOKEN" ] || [ "$WORKER_REGISTRATION_TOKEN" = "null
 fi
 echo "Worker Registration Token: $WORKER_REGISTRATION_TOKEN"
 echo
-echo "[INFO] To start a worker on a remote server, run this command:"
+echo "[INFO] If you want to start a worker on a remote server, follow these steps:"
+echo
+echo "1. Install the watcher client:"
+echo "curl -s https://raw.githubusercontent.com/MalwareDataLab/autodroid-watcher-client/main/install.sh | bash -s -- \\"
+echo "  --token \"$TELEMETRY_TOKEN\" \\"
+echo "  --url \"<<TELEMETRY_URL>>\" \\"
+echo "  --name \"telemetry-client-X\" \\"
+echo
+echo "Note: Replace <<TELEMETRY_URL>> with:"
+echo "- Local network: http://<ip>:$TELEMETRY_PORT (port $TELEMETRY_PORT)"
+echo "- ngrok: https://<your-ngrok-url>.ngrok.io (tunnel to port $TELEMETRY_PORT)"
+echo "- cloudflared: https://<your-cloudflared-url> (tunnel to port $TELEMETRY_PORT)"
+echo
+echo "2. Start the worker:"
 echo "docker run --rm --network host \\"
 echo "  -v /var/run/docker.sock:/var/run/docker.sock \\"
 echo "  -v autodroid_worker_data:/usr/app/temp:rw \\"
 echo "  --pull always $WORKER_IMAGE_NAME \\"
-echo "  -u \"http://<<THIS_BACKEND_MACHINE_NETWORK_IP>>:$PORT\" \\"
-echo "  -n \"remote_worker_X\" \\"
+echo "  -u \"<<BACKEND_URL>>\" \\"
+echo "  -n \"autodroid-worker-X\" \\"
 echo "  -t \"$WORKER_REGISTRATION_TOKEN\""
 echo
-echo "Remember to replace <<THIS_BACKEND_MACHINE_NETWORK_IP>> with the IP address of the target machine in the network."
-echo "Replace X with the worker number, for example, if you want to start 2 workers, you should run the command 2 times, with remote_worker_1 and remote_worker_2 as the worker names."
-echo "Also create the folder /usr/app/temp in the target machine before running the command."
+echo "Note: Replace <<BACKEND_URL>> with:"
+echo "- Local network: http://<ip>:$PORT (port $PORT)"
+echo "- ngrok: https://<your-ngrok-url>.ngrok.io (tunnel to port $PORT)"
+echo "- cloudflared: https://<your-cloudflared-url> (tunnel to port $PORT)"
 echo
-echo "[INFO] The script will start $NUM_WORKERS local worker(s)."
-echo "[INFO] Press Enter to continue after starting all workers (local and remote)..."
+echo "Replace X with the worker number (e.g., autodroid-worker-1, autodroid-worker-2)"
+echo "Create /usr/app/temp on the target machine before running"
+echo
+echo "[INFO] The script will start $NUM_WORKERS worker(s) locally. And will wait for $EXPECTED_WORKERS workers (local + remote) to be available."
+echo
+echo
+echo "Press Enter to continue after starting all workers (local and remote)..."
 read dummy
 
 
@@ -554,15 +664,27 @@ read dummy
 #
 step "Step 3" "Start $NUM_WORKERS worker container(s)."
 if [ "$NUM_WORKERS" -gt 0 ]; then
+  echo "[INFO] Pulling worker image $WORKER_IMAGE_NAME..."
+  docker pull "$WORKER_IMAGE_NAME"
+  echo "[INFO] Worker image pulled successfully."
+
+  echo "[INFO] Installing watcher client for local workers..."
+  curl -s https://raw.githubusercontent.com/MalwareDataLab/autodroid-watcher-client/main/install.sh | bash -s -- \
+    --token "$TELEMETRY_TOKEN" \
+    --url "http://localhost:$TELEMETRY_PORT" \
+    --service "$WATCHER_CLIENT_PM2_SERVICE_NAME" \
+    --name "$WATCHER_CLIENT_INSTANCE_NAME"
+  echo "[INFO] Watcher client installed for local workers."
+
   for i in $(seq 1 "$NUM_WORKERS"); do
-    CONTAINER_NAME="${CONTAINER_NAME_PREFIX}_${i}"
+    CONTAINER_NAME="${CONTAINER_NAME_PREFIX}${i}"
     
     docker run --name "$CONTAINER_NAME" --rm --network host \
       -v /var/run/docker.sock:/var/run/docker.sock \
       -v "$VOLUME_NAME":/usr/app/temp:rw \
       --pull always "$WORKER_IMAGE_NAME" \
       -u "http://host.docker.internal:$PORT" \
-      -n "$CONTAINER_NAME" \
+      -n "autodroid-worker${i}" \
       -t "$WORKER_REGISTRATION_TOKEN" &
     
     echo "Worker container $CONTAINER_NAME started."
@@ -585,7 +707,7 @@ fi
 step "Step 4" "Create a dataset - getting the upload_url to send it."
 echo "Dataset Information" "Size: $FILE_SIZE bytes" "MD5 Hash: $FILE_MD5" "MIME Type: $MIME_TYPE"
 DATASET_CREATE_RESPONSE=$(call_backend "POST" "/dataset" "{
-  \"description\": \"Test dataset\",
+  \"description\": \"Test dataset Drebin\",
   \"tags\": \"test,remove\",
   \"filename\": \"dataset_example.csv\",
   \"md5_hash\": \"$FILE_MD5\",
@@ -632,107 +754,78 @@ fi
 #
 # STEP 6
 #
-step "Step 6" "Request processing for the dataset(s)."
-PROCESSING_REQUEST_IDS=""
+step "Step 6" "Request processing for the dataset(s) using the telemetry server. Waiting for all processing to finish."
+docker pull "$WATCHER_SERVER_IMAGE_NAME"
+docker run --name "$WATCHER_SERVER_CONTAINER_NAME" --rm \
+  --network="$DOCKER_NETWORK_NAME" \
+  -p "$TELEMETRY_PORT:$TELEMETRY_PORT" \
+  -v "$SCRIPT_DIR/experiments:/app/experiments" \
+  --pull always "$WATCHER_SERVER_IMAGE_NAME" \
+  -p "$TELEMETRY_PORT" \
+  -e prod \
+  -i 1 \
+  -q "$EXPECTED_WATCHERS" \
+  -t "$TELEMETRY_TOKEN" \
+  -u "http://$DOCKER_API_SERVICE_NAME:$PORT" \
+  --firebase-api-token "$FIREBASEKEY" \
+  --processes-per-phase "$EXPECTED_WORKERS" \
+  --dataset-name "Drebin" \
+  --email "$USERNAME" \
+  --password "$PASSWORD"
 
-for i in $(seq 1 "$NUM_PROCESSING_REQUESTS"); do
-  echo "[INFO] Requesting processing job $i of $NUM_PROCESSING_REQUESTS"
-  PROCESSING_REQUEST_RESPONSE=$(call_backend "POST" "/processing" "{
-    \"dataset_id\": \"$DATASET_ID\",
-    \"processor_id\": \"$PROCESSOR_ID\",
-    \"parameters\": []
-  }")
-  PROCESSING_REQUEST_ID=$(echo "$PROCESSING_REQUEST_RESPONSE" | jq -r .id)
-  if [ -z "$PROCESSING_REQUEST_ID" ] || [ "$PROCESSOR_ID" = "null" ]; then
-    exit_on_error "Failed to request processing. Processing Request ID is missing."
-  fi
-  PROCESSING_REQUEST_IDS="$PROCESSING_REQUEST_IDS $PROCESSING_REQUEST_ID"
-  echo "Processing Request ID $i: $PROCESSING_REQUEST_ID"
-done
+WATCHER_SERVER_EXIT_CODE=$?
+
+if [ $WATCHER_SERVER_EXIT_CODE -ne 0 ]; then
+  exit_on_error "Watcher server failed to run properly"
+fi
 
 #
 # STEP 7
 #
-step "Step 7" "Check the processing status for all requests - Waiting for all processing to finish."
-check_worker_container() {
-  local running_workers=$(docker ps -q -f name="$CONTAINER_NAME_PREFIX" | wc -l)
-  if [ "$running_workers" -lt "$NUM_WORKERS" ]; then
-    exit_on_error "Not all worker containers are running. Expected $NUM_WORKERS, found $running_workers. Please restart the demo."
-  fi
-}
-
-check_all_processing_complete() {
-  local all_complete=true
-  local all_succeeded=true
-  local result_urls=""
-  local metric_urls=""
-  local first=true
-
-  for request_id in $PROCESSING_REQUEST_IDS; do
-    PROCESSING_STATUS_RESPONSE=$(call_backend "GET" "/processing/$request_id")
-    PROCESSING_STATUS=$(echo "$PROCESSING_STATUS_RESPONSE" | jq -r .status)
-
-    if [ "$PROCESSING_STATUS" = "SUCCEEDED" ]; then
-      local result_url=$(echo "$PROCESSING_STATUS_RESPONSE" | jq -r .result_file.public_url)
-      local metrics_url=$(echo "$PROCESSING_STATUS_RESPONSE" | jq -r .metrics_file.public_url)
-      
-      if [ -n "$result_url" ] && [ -n "$metrics_url" ]; then
-        if [ "$first" = true ]; then
-          result_urls="$result_url"
-          metric_urls="$metrics_url"
-          first=false
-        else
-          result_urls="$result_urls|$result_url"
-          metric_urls="$metric_urls|$metrics_url"
-        fi
-      else
-        all_complete=false
-        echo "[WARNING] Processing request $request_id is missing result or metrics URL"
-      fi
-    elif [ "$PROCESSING_STATUS" = "FAILED" ]; then
-      all_succeeded=false
-      echo "[ERROR] Processing request $request_id FAILED."
-    else
-      all_complete=false
-      echo "[INFO] Processing request $request_id status: $PROCESSING_STATUS"
-    fi
-  done
-
-  if [ "$all_complete" = true ]; then
-    if [ "$all_succeeded" = true ]; then
-      echo "All processing requests completed successfully."
-      PROCESSING_RESULT_URLS="$result_urls"
-      PROCESSING_METRICS_URLS="$metric_urls"
-      return 0
-    else
-      exit_on_error "One or more processing requests failed."
-    fi
-  fi
-  return 1
-}
-
-while true; do
-  check_worker_container
-  
-  if check_all_processing_complete; then
-    break
-  fi
-  
-  sleep 5
-done
+step "Step 7" "Display processing results."
 
 RESULTS_MESSAGE="Project demonstration finished.\n"
-i=1
-for result_url in $(echo "$PROCESSING_RESULT_URLS" | tr '|' ' '); do
-  metrics_url=$(echo "$PROCESSING_METRICS_URLS" | tr '|' ' ' | cut -d' ' -f$i)
-  RESULTS_MESSAGE="$RESULTS_MESSAGE\nProcessing Request $i Results:\n"
-  RESULTS_MESSAGE="$RESULTS_MESSAGE Result File URL: $result_url\n"
-  RESULTS_MESSAGE="$RESULTS_MESSAGE Metrics File URL: $metrics_url\n"
+
+# Get the original dataset URL
+DATASET_URL_RESPONSE=$(call_backend "GET" "/dataset/$DATASET_ID")
+DATASET_PUBLIC_URL=$(echo "$DATASET_URL_RESPONSE" | jq -r .file.public_url)
+RESULTS_MESSAGE="$RESULTS_MESSAGE\nOriginal Dataset URL: $DATASET_PUBLIC_URL\n"
+
+# Get all processing requests and their results
+PROCESSING_RESPONSE=$(call_backend "GET" "/processing")
+
+RESULTS_MESSAGE=""
+TOTAL=$(echo "$PROCESSING_RESPONSE" | jq '.edges | length')
+i=0
+
+while [ $i -lt "$TOTAL" ]; do
+  node=$(echo "$PROCESSING_RESPONSE" | jq -c ".edges[$i].node")
+  
+  PROCESSING_ID=$(echo "$node" | jq -r .id)
+  PROCESSING_STATUS=$(echo "$node" | jq -r .status)
+  PROCESSING_STARTED=$(echo "$node" | jq -r .started_at)
+  PROCESSING_FINISHED=$(echo "$node" | jq -r .finished_at)
+  
+  RESULTS_MESSAGE="${RESULTS_MESSAGE}\nProcessing Request ID: $PROCESSING_ID\n"
+  RESULTS_MESSAGE="${RESULTS_MESSAGE}Status: $PROCESSING_STATUS\n"
+  RESULTS_MESSAGE="${RESULTS_MESSAGE}Started: $PROCESSING_STARTED\n"
+  RESULTS_MESSAGE="${RESULTS_MESSAGE}Finished: $PROCESSING_FINISHED\n"
+  
+  if [ "$PROCESSING_STATUS" = "SUCCEEDED" ]; then
+    RESULT_URL=$(echo "$node" | jq -r .result_file.public_url)
+    METRICS_URL=$(echo "$node" | jq -r .metrics_file.public_url)
+    RESULTS_MESSAGE="${RESULTS_MESSAGE}\nResult File URL: $RESULT_URL\n"
+    RESULTS_MESSAGE="${RESULTS_MESSAGE}\nMetrics File URL: $METRICS_URL\n"
+  fi
+  
+  RESULTS_MESSAGE="${RESULTS_MESSAGE}__________________________________________________________________\n"
   i=$((i + 1))
 done
-RESULTS_MESSAGE="$RESULTS_MESSAGE\nOriginal Dataset URL: $DATASET_PUBLIC_URL\n"
-RESULTS_MESSAGE="$RESULTS_MESSAGE Homepage: https://malwaredatalab.github.io/\n"
-RESULTS_MESSAGE="$RESULTS_MESSAGE Engineer: Luiz Felipe Laviola <luiz@laviola.dev>\n"
-RESULTS_MESSAGE="$RESULTS_MESSAGE Enjoy!"
 
-stop "$RESULTS_MESSAGE"
+FINAL_MESSAGE="Homepage: https://malwaredatalab.github.io/\n"
+FINAL_MESSAGE="${FINAL_MESSAGE}Engineer: Luiz Felipe Laviola <luiz@laviola.dev>\n"
+FINAL_MESSAGE="${FINAL_MESSAGE}Enjoy!"
+GREETING=$(greeting "$FINAL_MESSAGE")
+FINAL_MESSAGE="$GREETING"
+
+stop "$RESULTS_MESSAGE\n${FINAL_MESSAGE}"
