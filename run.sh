@@ -12,6 +12,18 @@ DOCKER_NETWORK_NAME="autodroid_network"
 DOCKER_API_SERVICE_NAME="autodroid_api"
 #
 
+get_docker_compose_cmd() {
+  if command -v docker-compose >/dev/null 2>&1; then
+    echo "docker-compose"
+  elif docker compose version >/dev/null 2>&1; then
+    echo "docker compose"
+  else
+    exit_on_error "Neither 'docker-compose' nor 'docker compose' is available. Please install Docker Compose."
+  fi
+}
+
+DOCKER_COMPOSE_CMD=$(get_docker_compose_cmd)
+
 API_IMAGE_NAME="malwaredatalab/autodroid-api"
 WORKER_IMAGE_NAME="malwaredatalab/autodroid-worker"
 TOOL_IMAGE_NAME="malwaredatalab/malsyngen"
@@ -55,7 +67,7 @@ dropVolumeData() {
 
 cleanup() {
   echo "[INFO] Starting cleanup process..."
-  docker-compose down -v
+  $DOCKER_COMPOSE_CMD down -v
 
   if [ "$(docker ps -q -f name="$WATCHER_SERVER_CONTAINER_NAME")" ]; then
     echo "[INFO] Stopping watcher server..." >&2
@@ -350,7 +362,7 @@ ADMIN_EMAILS
 
 get_env_var() {
   VAR_NAME=$1
-  VALUE=$(docker-compose config | awk -v var="$VAR_NAME" '$1 == var":"{gsub(/"/, "", $2); print $2}')
+  VALUE=$($DOCKER_COMPOSE_CMD config | awk -v var="$VAR_NAME" '$1 == var":"{gsub(/"/, "", $2); print $2}')
 
   if [ -z "$VALUE" ] || [ "$VALUE" = "null" ] || [ "$VALUE" = "" ]; then
     exit_on_error "$VAR_NAME is missing or empty in $DOCKER_API_SERVICE_NAME environment variables."
@@ -450,10 +462,10 @@ set -e
 
 echo "[INFO] Press Ctrl+C to stop the demo."
 
-docker-compose down
+$DOCKER_COMPOSE_CMD down
 dropVolumeData
-docker-compose pull
-docker-compose up -d
+$DOCKER_COMPOSE_CMD pull
+$DOCKER_COMPOSE_CMD up -d
 
 until [ "$(curl -s -o /dev/null -w ''%{http_code}'' $HOST:$PORT/health/readiness)" -eq 200 ]; do
   echo "[INFO] Waiting for backend to be ready..."
@@ -794,7 +806,6 @@ RESULTS_MESSAGE="$RESULTS_MESSAGE\nOriginal Dataset URL: $DATASET_PUBLIC_URL\n"
 # Get all processing requests and their results
 PROCESSING_RESPONSE=$(call_backend "GET" "/processing")
 
-RESULTS_MESSAGE=""
 TOTAL=$(echo "$PROCESSING_RESPONSE" | jq '.edges | length')
 i=0
 

@@ -173,33 +173,6 @@ O script principal `run.sh` fornece um fluxo completo para executar o sistema. E
 - `-w, --expected-watchers`: Número de watchers esperados (conexões do cliente de telemetria) (padrão: 1)
 - `-h, --help`: Mostra a mensagem de ajuda
 
-#### Cenários de Exemplo
-
-1. **Configuração apenas local** (1 worker):
-```bash
-./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA
-```
-
-2. **Configuração apenas local** (múltiplos workers):
-```bash
-./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 3 -e 3
-```
-
-3. **Configuração híbrida** (2 workers locais, 3 workers remotos esperados):
-```bash
-./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 2 -e 5
-```
-
-4. **Configuração apenas remota** (sem workers locais, 3 workers remotos esperados):
-```bash
-./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 0 -e 3 -w 1
-```
-
-5. **Configuração com múltiplos watchers** (2 workers locais, 3 workers remotos esperados, 2 watchers):
-```bash
-./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 2 -e 5 -w 2
-```
-
 ### Configuração de Workers Remotos
 
 Ao usar workers remotos, o script exibirá instruções para configurar cada worker remoto. Você precisará:
@@ -266,6 +239,35 @@ Nesta etapa, serão solicitados 3Y requisições para quantidade X de workers.
 ```
 
 O backend deve ser capaz de processar as requisições e distribuir as tarefas igualmente entre os workers disponíveis (3 por worker).
+
+### Experimentos extras (não apresentados no artigo)
+
+Cenários de Exemplo
+
+1. **Configuração apenas local** (1 worker):
+```bash
+./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA
+```
+
+2. **Configuração apenas local** (múltiplos workers):
+```bash
+./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 3 -e 3
+```
+
+3. **Configuração híbrida** (2 workers locais, 3 workers remotos esperados):
+```bash
+./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 2 -e 5
+```
+
+4. **Configuração apenas remota** (sem workers locais, 3 workers remotos esperados):
+```bash
+./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 0 -e 3 -w 1
+```
+
+5. **Configuração com múltiplos watchers** (2 workers locais, 3 workers remotos esperados, 2 watchers):
+```bash
+./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 2 -e 5 -w 2
+```
 
 ## Considerações Finais
 
