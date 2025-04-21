@@ -41,11 +41,46 @@ A seguir, são listadas as dependências necessárias para a execução dos serv
 
 ## Software
 
+- [VirtualBox](https://www.virtualbox.org/wiki/Downloads) instalado
 - [Git](https://git-scm.com/downloads) instalado
 - [Docker](https://docs.docker.com/get-docker/) instalado
-- [Node.js](https://nodejs.org/en/download/) instalado (recomendado utilizar fnm ou nvm para instalar)
+- [Node.js](https://nodejs.org/en/download/) instalado
+
+### Script de instalação do Git (https://git-scm.com/downloads)
+
+```bash
+sudo apt-get update
+sudo apt-get install git
+```
+
+### Script de instalação Docker (https://docs.docker.com/get-docker/)
+
+```bash
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+```
+
+### Script de instalação Node.js (https://nodejs.org/en/download)
+
+```bash
+# Download and install fnm:
+curl -o- https://fnm.vercel.app/install | bash
+
+# Download and install Node.js:
+fnm install 22
+
+# Important: restart the terminal to apply the changes.
+
+# Verify the Node.js version:
+node -v # Should print "v22.14.0".
+
+# Verify npm version:
+npm -v # Should print "10.9.2".
+```
 
 ## Serviços
+
+> **Observação aos revisores do SBRC25**: para facilitar o processo de revisão, foi disponibilizada uma máquina virtual pré-configurada com o arquivo .ova já com todas as credenciais configuradas, incluindo o projeto Firebase, bastando importar o arquivo e simplesmente prosseguir para os [experimentos](#experimentos), caso não consiga encontrá-lo/acessá-lo, favor entrar em contato com [luiz@laviola.dev](mailto:luiz@laviola.dev).
 
 É necessário um projeto no [Firebase](https://firebase.google.com/) para a execução dos serviços da Cloud AutoDroid com as API Firebase Auth e Firebase Storage habilitadas.
 
@@ -77,7 +112,27 @@ As instruções para a criação e configuração do projeto Firebase estão dis
 
 # Instalação
 
-Certifique-se que as dependências listadas em [Dependências](#dependências) estão instaladas e operacionais, especialmente o Docker.
+Existem duas maneiras de configurar o ambiente para executar os serviços da Cloud AutoDroid:
+
+## Opção 1: Usando a VM Pré-configurada (Recomendado)
+
+Para facilitar o processo de instalação e configuração, disponibilizamos uma máquina virtual (.ova) pré-configurada com todas as dependências necessárias. Esta é a maneira mais rápida e simples de começar pois a VM já possui todas as dependências instaladas e configuradas.
+
+> **Observação aos revisores do SBRC25**: para facilitar o processo de revisão, foi disponibilizada uma máquina virtual pré-configurada com o arquivo .ova já com todas as credenciais configuradas, incluindo o projeto Firebase, bastando importar o arquivo e simplesmente prosseguir para os [experimentos](#experimentos), caso não consiga encontrá-lo/acessá-lo, favor entrar em contato com [luiz@laviola.dev](mailto:luiz@laviola.dev).
+
+1. Baixe a VM do VirtualBox disponível em [https://github.com/MalwareDataLab/autodroid-sbrc25/releases/download/v0.0.1/autodroid-sbrc25-vm.zip](https://github.com/MalwareDataLab/autodroid-sbrc25/releases/download/v0.0.1/autodroid-sbrc25-vm.zip)
+2. Importe o arquivo .ova no VirtualBox
+3. Inicie a VM
+4. Acesse o diretório do projeto:
+   ```
+   cd ~/autodroid-sbrc25
+   ```
+
+Prossiga para a execução dos experimentos [experimentos](#experimentos).
+
+## Opção 2: Instalação Manual
+
+Se preferir configurar manualmente o ambiente, certifique-se que as dependências listadas em [Dependências](#dependências) estão instaladas e operacionais, especialmente o Docker.
 
 Estão disponibilizados um arquivo `docker-compose.yml` e um script `run.sh` para a execução dos serviços da Cloud AutoDroid. Este script contém todos os passos utilizados para um teste completo da ferramenta.
 
@@ -194,7 +249,7 @@ Durante a execução, o script gera um token de telemetria único para rastrear 
 
 Os dados de telemetria são armazenados localmente e podem ser analisados posteriormente na pasta `experiments`. Os dados estão organizados por data de execução e a iteração do experimento. Cada arquivo .csv representa um worker. O arquivo `statistics.csv` dentro da pasta de iteração contém as métricas agregadas de todos os workers, da iteração. A pasta `globalStatistics` contém as métricas agregadas de todos os workers de todas as iterações. Caso deseje desconsiderar um conjunto de iterações, você pode apenas excluir a pasta correspondente antes de executar o script de demonstração.
 
-# Experimentos
+# Experimentos <a name="experimentos"></a>
 
 Este trabalho realizou três ciclos de experimentos, conforme apresentados no artigo, Y solicitações de experimentos para X workers, sendo que o primeiro X=Y, o segundo X=2Y e o terceiro X=3Y.
 
@@ -209,6 +264,16 @@ Considerando que o objetivo foi analisar a escalabilidade do sistema (distribui�
 As seções a seguir apresentam os comandos para executar os experimentos, respectivamente com X=Y, X=2Y e X=3Y.
 
 Observação: ajuste os parâmetros `-n` e `-r` conforme a quantidade de workers (X) e requisições (Y) desejadas, respeitando a proporção Y/X da etapa.
+
+## Reivindicação "Distribuição com balanceamento uniforme das tarefas"
+
+Pode ser verificado que o backend distribui as tarefas igualmente entre os workers disponíveis, conforme apresentado no artigo.
+
+```bash
+./run.sh -k "sua-chave-de-api-do-firebase" -u "seu-email@exemplo.com" -p "sua-senha" -n 3 -r 9
+```
+
+Este script irá iniciar 3 workers localmente e solicitar 9 requisições para o backend.
 
 ## Experimento #1: X=Y
 
@@ -269,6 +334,10 @@ Cenários de Exemplo
 ./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 2 -e 5 -w 2
 ```
 
+### Estastísticas e gráficos dos experimentos
+
+Após a execução dos experimentos, os dados são armazenados na pasta `./experiments`, onde é possível verificar as pastas de cada iteração, contendo os arquivos de estatísticas e gráficos, além da pasta `globalStatistics` contendo as estatísticas agregadas de todos os workers de todas as iterações e os gráficos gerados.
+
 ## Considerações Finais
 
 Os resultados de tempo de execução e utilização de recursos irão variar conforme as características de cada máquina e a quantidade de workers utilizados nelas. Espera-se que o backend seja capaz de processar as requisições e distribuir as tarefas igualmente entre os workers disponíveis. Assim, é possível analisar a escalabilidade do sistema, foco deste trabalho.
@@ -283,9 +352,14 @@ Para executar o notebook, você precisará ter o Jupyter instalado e as dependê
 jupyter notebook plots_sf_sbrc25.ipynb
 ```
 
-Acesse os repositórios de cada componente para mais detalhes sobre a implementação e a documentação de cada um, além de verificar a `Dockerfile` de cada projeto para mais detalhes sobre a configuração e a execução dos serviços.
-
 Convido você a conhecer o projeto [MalwareDataLab](https://mdl.unihacker.club/).
+
+Caso deseje ver detalhes sobre a implementação e a documentação de cada componente, além de verificar a `Dockerfile` de cada projeto para mais detalhes sobre a configuração e a execução dos serviços, acesse os repositórios de cada componente:
+
+- [AutoDroid API](https://github.com/MalwareDataLab/autodroid-api)
+- [AutoDroid Worker](https://github.com/MalwareDataLab/autodroid-worker)
+- [AutoDroid Watcher Server](https://github.com/MalwareDataLab/autodroid-watcher-server)
+- [AutoDroid Watcher Client](https://github.com/MalwareDataLab/autodroid-watcher-client)
 
 O autor/desenvolvedor deste projeto se coloca a disposição para responder quaisquer questões e fornecer maiores detalhes sobre o projeto através do e-mail [luiz@laviola.dev](mailto:luiz@laviola.dev) ou através de issues deste repositório.
 
