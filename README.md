@@ -41,7 +41,6 @@ A seguir, são listadas as dependências necessárias para a execução dos serv
 
 ## Software
 
-- [VirtualBox](https://www.virtualbox.org/wiki/Downloads) instalado
 - [Git](https://git-scm.com/downloads) instalado
 - [Docker](https://docs.docker.com/get-docker/) instalado
 - [Node.js](https://nodejs.org/en/download/) instalado
@@ -104,7 +103,7 @@ python3 -m notebook --version
 
 ## Serviços
 
-> **Observação aos revisores do SBRC25**: para facilitar o processo de revisão, foi disponibilizada uma máquina virtual pré-configurada com o arquivo .ova (senha: sbrc25) já com todas as credenciais configuradas, incluindo o projeto Firebase, bastando importar o arquivo e simplesmente prosseguir para os [experimentos](#experimentos), caso não consiga encontrá-lo/acessá-lo, favor entrar em contato com [luiz@laviola.dev](mailto:luiz@laviola.dev).
+> **Observação aos revisores do SBRC25**: para facilitar o processo de revisão, foi disponibilizado o arquivo `docker-compose.yml` já com todas as credenciais configuradas, incluindo o projeto Firebase e o comando de execução `run.sh` já configurado, bastando prosseguir para os [experimentos](#experimentos), caso não consiga encontrá-lo/acessá-lo, favor entrar em contato com [luiz@laviola.dev](mailto:luiz@laviola.dev).
 
 É necessário um projeto no [Firebase](https://firebase.google.com/) para a execução dos serviços da Cloud AutoDroid com as API Firebase Auth e Firebase Storage habilitadas.
 
@@ -136,27 +135,7 @@ As instruções para a criação e configuração do projeto Firebase estão dis
 
 # Instalação
 
-Existem duas maneiras de configurar o ambiente para executar os serviços da Cloud AutoDroid:
-
-## Opção 1: Usando a VM Pré-configurada (Recomendado)
-
-Para facilitar o processo de instalação e configuração, disponibilizamos uma máquina virtual (.ova) pré-configurada com todas as dependências necessárias. Esta é a maneira mais rápida e simples de começar pois a VM já possui todas as dependências instaladas e configuradas.
-
-> **Observação aos revisores do SBRC25**: para facilitar o processo de revisão, foi disponibilizada uma máquina virtual pré-configurada com o arquivo .ova (senha: sbrc25) já com todas as credenciais configuradas, incluindo o projeto Firebase, bastando importar o arquivo e simplesmente prosseguir para os [experimentos](#experimentos), caso não consiga encontrá-lo/acessá-lo, favor entrar em contato com [luiz@laviola.dev](mailto:luiz@laviola.dev).
-
-1. Baixe a VM do VirtualBox disponível em [https://github.com/MalwareDataLab/autodroid-sbrc25/releases/download/v0.0.1/autodroid-sbrc25-vm.zip](https://github.com/MalwareDataLab/autodroid-sbrc25/releases/download/v0.0.1/autodroid-sbrc25-vm.zip)
-2. Importe o arquivo .ova no VirtualBox
-3. Inicie a VM
-4. Acesse o diretório do projeto:
-   ```
-   cd ~/autodroid-sbrc25
-   ```
-
-Prossiga para a execução dos experimentos [experimentos](#experimentos).
-
-## Opção 2: Instalação Manual
-
-Se preferir configurar manualmente o ambiente, certifique-se que as dependências listadas em [Dependências](#dependências) estão instaladas e operacionais, especialmente o Docker.
+Para configurar o ambiente para executar os serviços da Cloud AutoDroid, certifique-se que as dependências listadas em [Dependências](#dependências) estão instaladas e operacionais, especialmente o Docker.
 
 Estão disponibilizados um arquivo `docker-compose.yml` e um script `run.sh` para a execução dos serviços da Cloud AutoDroid. Este script contém todos os passos utilizados para um teste completo da ferramenta.
 
@@ -179,7 +158,7 @@ cd autodroid-sbrc25
 
 ### Autenticação e Armazenamento
 
-Configure o projeto Firebase no arquivo `docker-compose.yml`, alterando as linhas conforme apresentado no [repositório da AutoDroid API](https://github.com/MalwareDataLab/autodroid-api?tab=readme-ov-file#firebase). Pode-se utilizar contas/projetos distintos entre os dois serviços (Authentication e Storage).
+Configure o projeto Firebase no arquivo `docker-compose.yml`, alterando as linhas abaixo. Pode-se utilizar contas/projetos distintos entre os dois serviços (Authentication e Storage). Caso necessário, há um passo a passo com capturas de tela no [repositório da AutoDroid API](https://github.com/MalwareDataLab/autodroid-api?tab=readme-ov-file#firebase).
 
 ```yaml
 # Providers
@@ -277,7 +256,7 @@ Os dados de telemetria são armazenados localmente e podem ser analisados poster
 
 Este trabalho realizou três ciclos de experimentos, conforme apresentados no artigo, Y solicitações de experimentos para X workers, sendo que o primeiro X=Y, o segundo X=2Y e o terceiro X=3Y.
 
-Cada comando executa um ciclo de experimentos. O script inicia o backend e os bancos de dados, cria o dataset e registra a ferramenta de IA a ser utilizada, logo após, inicia o watcher e a quantidade de workers configurada no parâmetro `-n`, e solicita Y requisições conforme o parâmetro `-r`.
+O script inicia o backend e os bancos de dados, cria o dataset e registra a ferramenta de IA a ser utilizada, logo após, inicia o watcher e a quantidade de workers configurada no parâmetro `-n`, e espera a quantidade de workers esperados no parâmetro `-e`.
 
 Conforme apresentado no artigo, o dataset, ferramenta de IA e parâmetros de configuração são constantes e estão configurados no script de demonstração `run.sh`. Além disso, o backend e os workers foram executados em máquinas distintas.
 
@@ -287,45 +266,17 @@ Considerando que o objetivo foi analisar a escalabilidade do sistema (distribui�
 
 As seções a seguir apresentam os comandos para executar os experimentos, respectivamente com X=Y, X=2Y e X=3Y.
 
-Observação: ajuste os parâmetros `-n` e `-r` conforme a quantidade de workers (X) e requisições (Y) desejadas, respeitando a proporção Y/X da etapa.
+Observação: ajuste os parâmetros `-n` e `-e` conforme a quantidade de workers a serem iniciados localmente e a quantidade total de workers esperados, respectivamente.
 
 ## Reivindicação "Distribuição com balanceamento uniforme das tarefas"
 
 Pode ser verificado que o backend distribui as tarefas igualmente entre os workers disponíveis, conforme apresentado no artigo.
 
 ```bash
-./run.sh -k "sua-chave-de-api-do-firebase" -u "seu-email@exemplo.com" -p "sua-senha" -n 3 -r 9
+./run.sh -k "sua-chave-de-api-do-firebase" -u "seu-email@exemplo.com" -p "sua-senha" -n 3 -e 3
 ```
 
-Este script irá iniciar 3 workers localmente e solicitar 9 requisições para o backend.
-
-## Experimento #1: X=Y
-
-Nesta etapa, serão solicitados Y requisições para quantidade X de workers.
-
-```bash
-./run.sh -k "sua-chave-de-api-do-firebase" -u "seu-email@exemplo.com" -p "sua-senha" -n 3 -r 3
-```
-
-O backend deve ser capaz de processar as requisições e distribuir as tarefas igualmente entre os workers disponíveis (1 por worker).
-
-## Experimento #2: X=2Y
-
-Nesta etapa, serão solicitados 2Y requisições para quantidade X de workers.
-
-```bash
-./run.sh -k "sua-chave-de-api-do-firebase" -u "seu-email@exemplo.com" -p "sua-senha" -n 3 -r 6
-```
-
-O backend deve ser capaz de processar as requisições e distribuir as tarefas igualmente entre os workers disponíveis (2 por worker).
-
-## Experimento #3: X=3Y
-
-Nesta etapa, serão solicitados 3Y requisições para quantidade X de workers.
-
-```bash
-./run.sh -k "sua-chave-de-api-do-firebase" -u "seu-email@exemplo.com" -p "sua-senha" -n 3 -r 9
-```
+Este script irá iniciar 3 workers localmente e esperar até que os 3 workers estejam prontos.
 
 O backend deve ser capaz de processar as requisições e distribuir as tarefas igualmente entre os workers disponíveis (3 por worker).
 
@@ -335,7 +286,7 @@ Cenários de Exemplo
 
 1. **Configuração apenas local** (1 worker):
 ```bash
-./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA
+./run.sh -k SUA_CHAVE_API_FIREBASE -u SEU_EMAIL -p SUA_SENHA -n 1 -e 1
 ```
 
 2. **Configuração apenas local** (múltiplos workers):

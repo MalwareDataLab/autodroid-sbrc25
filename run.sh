@@ -667,7 +667,7 @@ echo
 echo "[INFO] The script will start $NUM_WORKERS worker(s) locally. And will wait for $EXPECTED_WORKERS workers (local + remote) to be available."
 echo
 echo
-echo "Press Enter to continue after starting all workers (local and remote)..."
+echo "Press Enter to continue..."
 read dummy
 
 
@@ -695,7 +695,7 @@ if [ "$NUM_WORKERS" -gt 0 ]; then
       -v /var/run/docker.sock:/var/run/docker.sock \
       -v "$VOLUME_NAME":/usr/app/temp:rw \
       --pull always "$WORKER_IMAGE_NAME" \
-      -u "http://host.docker.internal:$PORT" \
+      -u "$HOST:$PORT" \
       -n "autodroid-worker${i}" \
       -t "$WORKER_REGISTRATION_TOKEN" &
     
