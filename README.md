@@ -85,16 +85,21 @@ npm -v # Should print "10.9.2".
 ```bash
 # Install Python and pip
 sudo apt update
-sudo apt install python3 python3-pip
+sudo apt install -y python3-full python3-venv
 
-# Install Jupyter Notebook
-pip3 install notebook
+# Create and activate virtual environment
+python3 -m venv venv
+source venv/bin/activate
 
-# Install required Python packages for the notebook
-pip3 install pandas matplotlib seaborn numpy
+# Install Jupyter Notebook and required packages
+pip install notebook pandas matplotlib seaborn numpy
 
 # Verify the installation
 python3 -m notebook --version
+
+# Note: Always activate the virtual environment before running Jupyter
+# source venv/bin/activate
+# jupyter notebook
 ```
 
 ## Serviços
@@ -368,6 +373,12 @@ Além dos gráficos preliminares gerados pelo script de demonstração, este rep
 Para executar o notebook, você precisará ter o Jupyter instalado e as dependências Python necessárias. O notebook está localizado na raiz do repositório e pode ser aberto com:
 
 ```bash
+# Remember to create and activate the virtual environment
+python3 -m venv venv
+source venv/bin/activate
+pip install notebook pandas matplotlib seaborn numpy
+
+# Run the notebook
 python3 -m notebook plots_sf_sbrc25.ipynb
 ```
 
