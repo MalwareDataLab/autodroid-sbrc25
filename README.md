@@ -45,6 +45,8 @@ A seguir, são listadas as dependências necessárias para a execução dos serv
 - [Git](https://git-scm.com/downloads) instalado
 - [Docker](https://docs.docker.com/get-docker/) instalado
 - [Node.js](https://nodejs.org/en/download/) instalado
+- [Python](https://www.python.org/downloads/) 3.8+ instalado
+- [Jupyter Notebook](https://jupyter.org/install) instalado
 
 ### Script de instalação do Git (https://git-scm.com/downloads)
 
@@ -76,6 +78,23 @@ node -v # Should print "v22.14.0".
 
 # Verify npm version:
 npm -v # Should print "10.9.2".
+```
+
+### Script de instalação Python e Jupyter Notebook
+
+```bash
+# Install Python and pip
+sudo apt update
+sudo apt install python3 python3-pip
+
+# Install Jupyter Notebook
+pip3 install notebook
+
+# Install required Python packages for the notebook
+pip3 install pandas matplotlib seaborn numpy
+
+# Verify the installation
+python3 -m notebook --version
 ```
 
 ## Serviços
@@ -349,7 +368,7 @@ Além dos gráficos preliminares gerados pelo script de demonstração, este rep
 Para executar o notebook, você precisará ter o Jupyter instalado e as dependências Python necessárias. O notebook está localizado na raiz do repositório e pode ser aberto com:
 
 ```bash
-jupyter notebook plots_sf_sbrc25.ipynb
+python3 -m notebook plots_sf_sbrc25.ipynb
 ```
 
 Convido você a conhecer o projeto [MalwareDataLab](https://mdl.unihacker.club/).
