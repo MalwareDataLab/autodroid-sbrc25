@@ -99,7 +99,7 @@ python3 -m notebook --version
 
 ## Serviços
 
-> **Observação aos revisores do SBRC25**: para facilitar o processo de revisão, foi disponibilizada uma máquina virtual pré-configurada com o arquivo .ova já com todas as credenciais configuradas, incluindo o projeto Firebase, bastando importar o arquivo e simplesmente prosseguir para os [experimentos](#experimentos), caso não consiga encontrá-lo/acessá-lo, favor entrar em contato com [luiz@laviola.dev](mailto:luiz@laviola.dev).
+> **Observação aos revisores do SBRC25**: para facilitar o processo de revisão, foi disponibilizada uma máquina virtual pré-configurada com o arquivo .ova (senha: sbrc25) já com todas as credenciais configuradas, incluindo o projeto Firebase, bastando importar o arquivo e simplesmente prosseguir para os [experimentos](#experimentos), caso não consiga encontrá-lo/acessá-lo, favor entrar em contato com [luiz@laviola.dev](mailto:luiz@laviola.dev).
 
 É necessário um projeto no [Firebase](https://firebase.google.com/) para a execução dos serviços da Cloud AutoDroid com as API Firebase Auth e Firebase Storage habilitadas.
 
@@ -137,7 +137,7 @@ Existem duas maneiras de configurar o ambiente para executar os serviços da Clo
 
 Para facilitar o processo de instalação e configuração, disponibilizamos uma máquina virtual (.ova) pré-configurada com todas as dependências necessárias. Esta é a maneira mais rápida e simples de começar pois a VM já possui todas as dependências instaladas e configuradas.
 
-> **Observação aos revisores do SBRC25**: para facilitar o processo de revisão, foi disponibilizada uma máquina virtual pré-configurada com o arquivo .ova já com todas as credenciais configuradas, incluindo o projeto Firebase, bastando importar o arquivo e simplesmente prosseguir para os [experimentos](#experimentos), caso não consiga encontrá-lo/acessá-lo, favor entrar em contato com [luiz@laviola.dev](mailto:luiz@laviola.dev).
+> **Observação aos revisores do SBRC25**: para facilitar o processo de revisão, foi disponibilizada uma máquina virtual pré-configurada com o arquivo .ova (senha: sbrc25) já com todas as credenciais configuradas, incluindo o projeto Firebase, bastando importar o arquivo e simplesmente prosseguir para os [experimentos](#experimentos), caso não consiga encontrá-lo/acessá-lo, favor entrar em contato com [luiz@laviola.dev](mailto:luiz@laviola.dev).
 
 1. Baixe a VM do VirtualBox disponível em [https://github.com/MalwareDataLab/autodroid-sbrc25/releases/download/v0.0.1/autodroid-sbrc25-vm.zip](https://github.com/MalwareDataLab/autodroid-sbrc25/releases/download/v0.0.1/autodroid-sbrc25-vm.zip)
 2. Importe o arquivo .ova no VirtualBox
