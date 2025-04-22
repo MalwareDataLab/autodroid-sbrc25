@@ -103,7 +103,7 @@ python3 -m notebook --version
 
 ## Serviços
 
-> **Observação aos revisores do SBRC25**: para facilitar o processo de revisão, foi disponibilizado o arquivo `docker-compose.yml` já com todas as credenciais configuradas, incluindo o projeto Firebase e o comando de execução `run.sh` já configurado, bastando prosseguir para os [experimentos](#experimentos), caso não consiga encontrá-lo/acessá-lo, favor entrar em contato com [luiz@laviola.dev](mailto:luiz@laviola.dev).
+> **Observação aos revisores do SBRC25**: para facilitar o processo de revisão, foi disponibilizado o arquivo `docker-compose.yml` já com todas as credenciais configuradas, incluindo o projeto Firebase e o comando de execução `run.sh` já configurado com login e senha, bastando prosseguir para os [experimentos](#experimentos), caso não consiga encontrá-lo/acessá-lo, favor entrar em contato com [luiz@laviola.dev](mailto:luiz@laviola.dev).
 
 É necessário um projeto no [Firebase](https://firebase.google.com/) para a execução dos serviços da Cloud AutoDroid com as API Firebase Auth e Firebase Storage habilitadas.
 
@@ -174,7 +174,9 @@ Configure o projeto Firebase no arquivo `docker-compose.yml`, alterando as linha
 
 ### Conta do Usuário
 
-Crie uma conta de usuário ou utilize uma conta existente no projeto Firebase, esta conta será utilizada para acessar a aplicação e para a execução dos experimentos.
+> **Observação aos revisores do SBRC25**: para facilitar o processo de revisão, foi disponibilizado o arquivo `docker-compose.yml` já com todas as credenciais configuradas, incluindo o projeto Firebase e o comando de execução `run.sh` já configurado com login e senha, bastando prosseguir para os [experimentos](#experimentos), caso não consiga encontrá-lo/acessá-lo, favor entrar em contato com [luiz@laviola.dev](mailto:luiz@laviola.dev).
+
+Crie uma conta de usuário ou utilize uma conta existente no projeto Firebase. Esta conta será utilizada para acessar a aplicação e para a execução dos experimentos. Você pode usar a interface gráfica do Firebase ou usar o comando abaixo para criar a conta:
 
 ```
 curl --location 'https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=YOUR_FIREBASE_API_KEY_HERE' \
